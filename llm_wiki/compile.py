@@ -381,6 +381,7 @@ class Compiler:
     def code_fix_wiki(self) -> list[str]:
         """Layer-1 Code Auto-fix over the whole Wiki (deterministic)."""
         fixes = self.store.sync_bidirectional_links()
+        fixes += self.store.prune_dangling_links()
         errors = validators.check_index_consistency(self.store)
         if errors:
             self.store.rebuild_all_indices()

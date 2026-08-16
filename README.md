@@ -28,20 +28,26 @@ export LLM_WIKI_MODEL="kimi-k2-0711-preview"            # 默认值，可换
 
 ```bash
 # 编译文档进 Wiki（算法 1 全流程：选页→编译→校验→Error Book→修复）
-python -m llm_wiki ingest my_notes.txt --wiki ./wiki
+python -m llm_wiki --wiki ./wiki ingest my_notes.txt
 
 # 提问（Agent 遍历：搜索→阅读→跟链接→充分性检查→作答）
-python -m llm_wiki query "哪部电影的导演更年长？" --wiki ./wiki
+python -m llm_wiki --wiki ./wiki query "哪部电影的导演更年长？"
 
 # 结构校验（5 类确定性错误检测）
-python -m llm_wiki validate --wiki ./wiki
+python -m llm_wiki --wiki ./wiki validate
 
 # 代码自动修复；--finalize 追加 3 轮 代码↔LLM 修复（论文 §3.3 定稿阶段）
-python -m llm_wiki fix --finalize --wiki ./wiki
+python -m llm_wiki --wiki ./wiki fix --finalize
+
+# 删除一篇已入库的文档并恢复 Wiki 一致性（先 --dry-run 预览影响面）
+python -m llm_wiki --wiki ./wiki delete my_notes.txt --dry-run
+python -m llm_wiki --wiki ./wiki delete my_notes.txt
 
 # 查看错误记录本
-python -m llm_wiki errorbook --wiki ./wiki
+python -m llm_wiki --wiki ./wiki errorbook
 ```
+
+（`--wiki` 是全局参数，需放在子命令之前。）
 
 无 API key 时可跑脚本化端到端演示（编译本论文自身 + 多跳查询）：
 
@@ -68,7 +74,7 @@ python examples/demo_paper.py
 ## 测试
 
 ```bash
-.venv/Scripts/python -m pytest tests/ -q   # 55 个用例，FakeLLM 驱动，无需 API key
+.venv/Scripts/python -m pytest tests/ -q   # 65 个用例，FakeLLM 驱动，无需 API key
 ```
 
 ## 与论文的差异（刻意取舍）
@@ -76,3 +82,4 @@ python examples/demo_paper.py
 - **wiki_search 无向量嵌入**：以页名/别名/标签/摘要的结构化匹配为主、正文匹配回退（论文本就如此排序优先级）；未接入嵌入模型。
 - **未复现实验**：不含基准评测代码（HotpotQA/MuSiQue/2Wiki/AuthTrace）。
 - **Agent 工具协议为 JSON action** 而非原生 function calling：兼容任意 OpenAI 兼容端点（含不支持 tools 参数的本地模型）。
+- **文档删除（仓库扩展）**：论文未定义删除语义；`llm_wiki/delete.py` 实现算法 1 的逆过程——反查引用 → 删孤儿页 → LLM 重验证存活页事实 → 级联清链 → 重建索引，以结构校验零错误收尾。
