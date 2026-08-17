@@ -144,3 +144,15 @@ class ErrorBook:
 
     def open_entries(self) -> list[dict]:
         return [e for e in self.entries if e.get("status") == "open"]
+
+    def close_for_pages(self, pages: list[str]) -> list[dict]:
+        """Close open entries located on pages that no longer exist (e.g.
+        removed by document deletion). Code-only, no LLM, no re-verification:
+        the page is gone, so the error can no longer be meaningfully open."""
+        gone = set(pages)
+        closed = [e for e in self.entries if e.get("status") == "open" and e.get("page") in gone]
+        for e in closed:
+            e["status"] = "closed"
+        if closed:
+            self.save()
+        return closed

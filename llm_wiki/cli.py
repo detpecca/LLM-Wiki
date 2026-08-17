@@ -1,11 +1,12 @@
-"""Command-line interface: ingest / query / validate / fix / lint / errorbook.
+"""Command-line interface: ingest / query / validate / fix / delete / errorbook.
 
-Examples:
-    python -m llm_wiki ingest notes.txt --wiki ./wiki
-    python -m llm_wiki query "Which film has the older director?" --wiki ./wiki
-    python -m llm_wiki validate --wiki ./wiki
-    python -m llm_wiki fix --wiki ./wiki            # code autofix + finalize
-    python -m llm_wiki errorbook --wiki ./wiki
+Examples (--wiki is a global option and comes BEFORE the subcommand):
+    python -m llm_wiki --wiki ./wiki ingest notes.txt
+    python -m llm_wiki --wiki ./wiki query "Which film has the older director?"
+    python -m llm_wiki --wiki ./wiki validate
+    python -m llm_wiki --wiki ./wiki fix --finalize
+    python -m llm_wiki --wiki ./wiki delete notes.txt    # --dry-run previews impact
+    python -m llm_wiki --wiki ./wiki errorbook
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from pathlib import Path
 
 from . import agent, validators
 from .compile import Compiler
+from .delete import delete_document
 from .error_book import ErrorBook
 from .llm import LLMClient
 from .schema import slugify
@@ -90,6 +92,38 @@ def cmd_fix(args) -> int:
     return 0
 
 
+def cmd_delete(args) -> int:
+    store, book, llm = _components(args)
+    stem = args.source
+    if Path(args.source).is_file():  # original file path: derive the stem
+        stem = slugify(Path(args.source).stem) or "source"
+    try:
+        report = delete_document(store, llm, book, stem, dry_run=args.dry_run)
+    except (FileNotFoundError, RuntimeError) as e:
+        print(f"error: {e}")
+        return 1
+
+    print(f"document {report['stem']!r}: {len(report['digests'])} digest(s), "
+          f"{len(report['articles'])} archived article(s)")
+    print(f"pages deleted (sole source): {report['pages_deleted'] or 'none'}")
+    print(f"pages re-verified: {report['pages_reverified'] or 'none'}")
+    if report.get("repaired"):
+        print(f"LLM repairs: {', '.join(report['repaired'])}")
+    if report.get("pruned_links"):
+        print(f"dangling links pruned: {len(report['pruned_links'])}")
+    if args.dry_run:
+        print("(dry run: nothing was written)")
+        return 0
+    errors = report["validation"]
+    if errors:
+        for e in errors:
+            print(e)
+        print(f"{len(errors)} structural error(s) remain after deletion")
+        return 1
+    print("OK: wiki is consistent")
+    return 0
+
+
 def cmd_errorbook(args) -> int:
     _store, book, _llm = _components(args)
     for e in book.entries:
@@ -125,6 +159,13 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("fix", help="code autofix; --finalize adds LLM repair rounds")
     p.add_argument("--finalize", action="store_true")
     p.set_defaults(fn=cmd_fix)
+
+    p = sub.add_parser("delete",
+                       help="remove an ingested document and restore consistency")
+    p.add_argument("source", help="original source file path or source-id prefix")
+    p.add_argument("--dry-run", action="store_true",
+                   help="show the impact (pages deleted / re-verified), write nothing")
+    p.set_defaults(fn=cmd_delete)
 
     p = sub.add_parser("errorbook", help="show error book entries")
     p.set_defaults(fn=cmd_errorbook)

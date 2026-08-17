@@ -136,3 +136,25 @@ def parse_section_links(text: str, section: str) -> list[tuple[str, str]]:
         if lm:
             out.append((lm.group(1).strip(), (lm.group(2) or "").strip()))
     return out
+
+
+def rewrite_section(text: str, section: str, keep) -> tuple[str, list[tuple[str, str]]]:
+    """Filter the bullets of a ``## section`` block via ``keep(target)``.
+
+    Surgical edit — everything outside the section is left byte-identical.
+    The section body is regenerated from its parsed bullets (canonical
+    ``- [[target]] -- note`` form); bullets whose target fails ``keep`` are
+    dropped, and an emptied section gets the ``- (none)`` placeholder, matching
+    render_page. Returns (new_text, removed (target, note) pairs); returns
+    the original text and [] when nothing was removed or the section is absent.
+    """
+    entries = parse_section_links(text, section)
+    removed = [(t, n) for t, n in entries if not keep(t)]
+    if not removed:
+        return text, []
+    kept = [(t, n) for t, n in entries if keep(t)]
+    bullets = [f"- [[{t}]] -- {n}" if n else f"- [[{t}]]" for t, n in kept] or ["- (none)"]
+    block = f"## {section}\n\n" + "\n".join(bullets) + "\n"
+    new = re.sub(rf"^## {re.escape(section)}\s*\n.*?(?=^## |\Z)",
+                 lambda _m: block, text, count=1, flags=re.M | re.S)
+    return new, removed

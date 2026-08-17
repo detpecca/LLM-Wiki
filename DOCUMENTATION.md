@@ -89,7 +89,8 @@
 ### 第 8 站：外围（可选读）
 
 - `llm_wiki/llm.py`：OpenAI 兼容客户端，唯一接口是 `chat(messages) -> str`——全系统所有 LLM 调用都走这里，换模型/换端点只改环境变量；
-- `llm_wiki/cli.py`：五个子命令的薄壳，把上面所有模块串起来；
+- `llm_wiki/delete.py`：文档删除（仓库扩展，算法 1 的逆过程）——足迹全匹配防前缀碰撞、扫描 Related Sources 反查引用页、孤儿页整页下线、存活页 LLM 重验证裁剪；`code_fix_wiki` 也吸收了悬空链接剪除作为崩溃恢复手段；
+- `llm_wiki/cli.py`：六个子命令的薄壳，把上面所有模块串起来；
 - `tests/conftest.py`：`FakeLLM`——预置回复队列的 LLM 替身，全部测试靠它摆脱 API 依赖。读测试（尤其 `test_compile.py` 和 `test_agent.py`）是理解系统行为的最快方式；
 - `examples/demo_paper.py`：端到端演示， ScriptedLLM 展示了每个 LLM 步骤"应该输出什么"。
 
@@ -140,6 +141,34 @@ finalize()：3 轮 code-fix ↔ LLM-fix
         └───────────────────────────────────────────────────────┘
 ```
 
+### 删除期（delete，仓库扩展）
+
+论文只定义了增量编译；删除是本仓库对论文的扩展，实现为算法 1 的逆过程：
+
+```
+被删文档 stem（文件路径 slugify 或 source-id 前缀）
+   │
+   ▼
+足迹匹配：sources/digests/ + sources/articles/ 中 id == stem 或 stem-<数字> 的文件
+（id 全匹配，删除 "notes" 不会误伤 "notes-2-001"）
+   │
+   ▼
+反查引用页：一次扫描全部知识页 Related Sources 建 {页:引用集} 缓存（引用即溯源索引，按需扫描不持久化）
+   ├─ 有引用且引用 ⊆ 足迹 ─► 孤儿页整页删除 + ErrorBook.close_for_pages
+   │                          （无引用页永不误判为孤儿）
+   └─ 另有来源 ─────► 剪掉死引用（schema.rewrite_section 手术式改写）
+                      → llm_periodic_fix 用剩余 digest 重验证、裁剪失支撑事实
+                      → verify_and_close 关闭幸存页上已消解的陈旧 open 条目
+   │
+   ▼
+级联清理：prune_dangling_links 全库剪掉指向已消失目标的 bullet → rebuild_indices_for（仅受影响分类）
+   │
+   ▼
+structural_validate 零错误收尾（否则 CLI 退出码非 0）
+```
+
+单步幂等但整体不可重跑：每次写入本身幂等（剪引用、`unlink(missing_ok)`、索引重建），但 digest 一旦删除，再跑 delete 会因 `document_footprint` 匹配不到而中止——崩溃恢复走 `fix`（`code_fix_wiki` 补完剩余清链/重建）。`--dry-run` 只打印足迹/受影响页/将删除的页，零写入。
+
 ### 文件布局（运行时产物）
 
 ```
@@ -179,11 +208,11 @@ error_book.yaml             # ErrorBook 持久化
 | 改页面格式 | `schema.py` 的 `REQUIRED_SECTIONS` + `render_page`，校验器会跟随 |
 | 接入 Obsidian | 无需改代码——wiki/ 目录直接作为 Obsidian vault 打开 |
 
-## 六、测试地图（55 例）
+## 六、测试地图（66 例）
 
 | 文件 | 覆盖 |
 |---|---|
-| `test_schema.py` | slugify、链接提取、渲染/解析往返 |
+| `test_schema.py` | slugify、链接提取、渲染/解析往返、段落手术式过滤 |
 | `test_store.py` | 读写、双向链接幂等、索引重建、增量索引重建 |
 | `test_validators.py` | 5 类结构错误各一例 + 干净 Wiki 零误报 |
 | `test_consistency.py` | 跨页矛盾检测、页对去重、抽样上限 |
@@ -193,3 +222,4 @@ error_book.yaml             # ErrorBook 持久化
 | `test_llm.py` | 瞬时错误重试成功、重试上限、4xx 不重试 |
 | `test_robustness.py` | 坏 LLM 输出（数组/缺 path/无 JSON）不崩、批次隔离、更新归一化 |
 | `test_agent.py` | 桥接比较的多跳遍历、未读不许答、耐心/预算两种终止 |
+| `test_delete.py` | 足迹全匹配防前缀碰撞、孤儿页级联删除、存活页剪引用+LLM 重验证、修复守卫、dry-run 零写入、无 key 中止、重跑洁净报错、幸存页陈旧条目关闭 |

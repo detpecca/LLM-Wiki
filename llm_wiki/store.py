@@ -76,6 +76,10 @@ class WikiStore:
         d = self.root / "sources" / "digests"
         return sorted(f"sources/digests/{f.stem}" for f in d.glob("*.md"))
 
+    def iter_articles(self) -> list[str]:
+        d = self.root / "sources" / "articles"
+        return sorted(f"sources/articles/{f.stem}" for f in d.glob("*.md"))
+
     # ----------------------------------------------------------------- writes
     def write(self, rel: str, text: str) -> None:
         f = self.page_file(rel)
@@ -120,6 +124,19 @@ class WikiStore:
                     continue
                 if self.exists(link) and self.add_backlink(link, rel):
                     fixes.append(f"{link} <- {rel}")
+        return fixes
+
+    def prune_dangling_links(self) -> list[str]:
+        """Scan all pages; drop bullets linking to non-existent targets
+        (pages or digests). The inverse of sync_bidirectional_links."""
+        fixes = []
+        for rel in self.iter_pages():
+            text = self.read(rel)
+            new, removed = schema.rewrite_section(text, "Related Pages", self.exists)
+            new, removed_src = schema.rewrite_section(new, "Related Sources", self.exists)
+            if removed or removed_src:
+                self.write(rel, new)
+                fixes += [f"{rel}: pruned [[{t}]]" for t, _ in removed + removed_src]
         return fixes
 
     # ---------------------------------------------------------------- indices

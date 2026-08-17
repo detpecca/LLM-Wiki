@@ -10,3 +10,6 @@ dist/
 # 运行时产物（知识库实例，不入库）
 wiki/
 error_book.yaml
+
+# ZCode agent session data
+.zcode/
