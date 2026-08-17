@@ -15,9 +15,14 @@ python -m pytest tests/test_compile.py -q       # single module
 # it goes BEFORE the subcommand, or argparse rejects it.
 python -m llm_wiki --wiki ./wiki ingest notes.txt
 python -m llm_wiki --wiki ./wiki query "..."
+python -m llm_wiki --wiki ./wiki search "..."          # structured-signal search
+python -m llm_wiki --wiki ./wiki read entities/X        # batch-read pages
+python -m llm_wiki --wiki ./wiki stats                  # counts
 python -m llm_wiki --wiki ./wiki validate
 python -m llm_wiki --wiki ./wiki fix --finalize
 python -m llm_wiki --wiki ./wiki delete notes.txt   # --dry-run previews impact
+# ingest/search/read/stats/validate/fix/errorbook accept --json (DSH plugin drives these).
+# delete is human-only: destructive KB management, no --json, not exposed to the agent.
 
 # Scripted end-to-end demo, no API key
 python examples/demo_paper.py

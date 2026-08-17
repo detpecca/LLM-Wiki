@@ -33,7 +33,12 @@ python -m llm_wiki --wiki ./wiki ingest my_notes.txt
 # 提问（Agent 遍历：搜索→阅读→跟链接→充分性检查→作答）
 python -m llm_wiki --wiki ./wiki query "哪部电影的导演更年长？"
 
-# 结构校验（5 类确定性错误检测）
+# 检索 / 阅读 / 统计（命令行直用；也是 harness 插件调用的入口）
+python -m llm_wiki --wiki ./wiki search "导演"
+python -m llm_wiki --wiki ./wiki read entities/X concepts/Y
+python -m llm_wiki --wiki ./wiki stats
+
+# 结构校验（validate 命令跑 4 类确定性检查；第 5 类 unseen-overwrite 在编译期）
 python -m llm_wiki --wiki ./wiki validate
 
 # 代码自动修复；--finalize 追加 3 轮 代码↔LLM 修复（论文 §3.3 定稿阶段）
@@ -48,6 +53,8 @@ python -m llm_wiki --wiki ./wiki errorbook
 ```
 
 （`--wiki` 是全局参数，需放在子命令之前。）
+
+读/修复类命令（`ingest`/`search`/`read`/`stats`/`validate`/`fix`/`errorbook`）都支持 `--json`，供 DeepSeek Harness 插件（dsh-llm-wiki）以子进程方式驱动。`delete` 是破坏性的知识库管理，**刻意只留给人工使用**，不提供 `--json`、不暴露给 Agent。
 
 无 API key 时可跑脚本化端到端演示（编译本论文自身 + 多跳查询）：
 
