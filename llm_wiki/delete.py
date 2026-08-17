@@ -14,8 +14,11 @@ consistency invariant:
 ``report["validation"]`` holds whatever structural errors remain at the end;
 the CLI turns a non-empty list into a non-zero exit code.
 
-Every step is idempotent: re-running after a crash completes the remaining
-work (``python -m llm_wiki fix`` can also finish the link/index cleanup).
+Crash recovery: run ``python -m llm_wiki fix``. Every write here is
+individually idempotent (citation strips, ``unlink(missing_ok=True)``, index
+rebuilds), but ``delete`` is *not* safely re-runnable once the digests are
+gone: ``document_footprint`` would then match nothing and abort. ``fix``
+(``code_fix_wiki``) finishes any half-done link/index cleanup instead.
 """
 
 from __future__ import annotations
@@ -50,16 +53,27 @@ def _citations(store: WikiStore, rel: str) -> set[str]:
     return {t for t, _ in schema.parse_section_links(store.read(rel), "Related Sources")}
 
 
-def affected_pages(store: WikiStore, digests: list[str]) -> list[str]:
+def _citation_map(store: WikiStore) -> dict[str, set[str]]:
+    """One pass over every page -> its Related Sources citation set."""
+    return {rel: _citations(store, rel) for rel in store.iter_pages()}
+
+
+def affected_pages(cites: dict[str, set[str]], digests: list[str]) -> list[str]:
     """Knowledge pages citing any of the given digests (reverse provenance)."""
     dead = set(digests)
-    return [rel for rel in store.iter_pages() if _citations(store, rel) & dead]
+    return [rel for rel, c in cites.items() if c & dead]
 
 
-def _sole_citation_pages(store: WikiStore, pages: list[str], digests: list[str]) -> list[str]:
-    """Pages whose citations will all be gone once the digests are deleted."""
+def _sole_citation_pages(cites: dict[str, set[str]], pages: list[str],
+                         digests: list[str]) -> list[str]:
+    """Pages whose citations will all be gone once the digests are deleted.
+
+    A page with no citations at all is never treated as sole-source (its empty
+    set is a subset of everything) — only pages that *do* cite, and cite only
+    dead digests, are removed.
+    """
     dead = set(digests)
-    return [rel for rel in pages if _citations(store, rel) <= dead]
+    return [rel for rel in pages if cites[rel] and cites[rel] <= dead]
 
 
 def delete_document(store: WikiStore, llm, book: ErrorBook, stem: str,
@@ -70,8 +84,9 @@ def delete_document(store: WikiStore, llm, book: ErrorBook, stem: str,
         raise FileNotFoundError(
             f"no ingested document matches source-id prefix {stem!r} in {store.root}")
 
-    affected = affected_pages(store, digests)
-    dead_pages = _sole_citation_pages(store, affected, digests)
+    cites = _citation_map(store)  # one pass; reused by affected/sole-source below
+    affected = affected_pages(cites, digests)
+    dead_pages = _sole_citation_pages(cites, affected, digests)
     survivors = sorted(set(affected) - set(dead_pages))
 
     report = {
@@ -108,10 +123,14 @@ def delete_document(store: WikiStore, llm, book: ErrorBook, stem: str,
     for rel in digests + articles:
         store.delete(rel)
 
+    compiler = Compiler(store, llm, book)
     if survivors:  # re-verify facts against the remaining digests (LLM)
-        report["repaired"] = Compiler(store, llm, book).llm_periodic_fix(pages=survivors)
+        report["repaired"] = compiler.llm_periodic_fix(pages=survivors)
+        # close any now-stale open entries on survivors (e.g. an UNSUPPORTED_FACT
+        # that pointed at a digest we just removed and the repair resolved)
+        report["closed_entries"] += compiler.verify_and_close()
 
     report["pruned_links"] = store.prune_dangling_links()  # safety net, wiki-wide
-    store.rebuild_all_indices()
+    store.rebuild_indices_for(survivors + dead_pages)
     report["validation"] = validators.structural_validate(store)
     return report

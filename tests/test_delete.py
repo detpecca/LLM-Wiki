@@ -188,3 +188,23 @@ def test_aborts_without_api_key_when_survivors_exist(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):
         delete.delete_document(store, LLMClient(), book, "doc1")
     assert _snapshot(store) == before     # aborted before any change was written
+
+
+def test_stale_survivor_entry_closed_after_delete(tmp_path):
+    """An open entry on a surviving page whose error is gone after re-verify
+    should be closed too (not just entries on deleted pages)."""
+    store, book = _setup(tmp_path)
+    _mixed_wiki(store)
+    # repair resolves the unsupported fact on the surviving page
+    repaired = _page("concepts/Mix",
+                     sources=[("sources/digests/doc2-001", "b")], facts=["fact two"])
+    llm = FakeLLM(["UNSUPPORTED: fact one", repaired])
+    book.discover([validators.WikiError(
+        validators.UNSUPPORTED_FACT, "concepts/Mix", "fact one")], "2026-01-01")
+    book.entries[-1]["constraint_rule"] = "keep facts supported"  # eligible to close
+    assert book.open_entries()
+
+    delete.delete_document(store, llm, book, "doc1")
+
+    assert book.open_entries() == []      # stale survivor entry closed
+

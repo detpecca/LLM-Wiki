@@ -153,19 +153,21 @@ finalize()：3 轮 code-fix ↔ LLM-fix
 （id 全匹配，删除 "notes" 不会误伤 "notes-2-001"）
    │
    ▼
-反查引用页：扫描全部知识页的 Related Sources（引用即溯源索引，按需扫描不持久化）
-   ├─ 引用 ⊆ 足迹 ──► 孤儿页整页删除 + ErrorBook.close_for_pages
+反查引用页：一次扫描全部知识页 Related Sources 建 {页:引用集} 缓存（引用即溯源索引，按需扫描不持久化）
+   ├─ 有引用且引用 ⊆ 足迹 ─► 孤儿页整页删除 + ErrorBook.close_for_pages
+   │                          （无引用页永不误判为孤儿）
    └─ 另有来源 ─────► 剪掉死引用（schema.rewrite_section 手术式改写）
                       → llm_periodic_fix 用剩余 digest 重验证、裁剪失支撑事实
+                      → verify_and_close 关闭幸存页上已消解的陈旧 open 条目
    │
    ▼
-级联清理：prune_dangling_links 全库剪掉指向已消失目标的 bullet → rebuild_all_indices
+级联清理：prune_dangling_links 全库剪掉指向已消失目标的 bullet → rebuild_indices_for（仅受影响分类）
    │
    ▼
 structural_validate 零错误收尾（否则 CLI 退出码非 0）
 ```
 
-每一步幂等：中途崩溃后重跑 delete 或 `fix` 即可收敛。`--dry-run` 只打印足迹/受影响页/将删除的页，零写入。
+单步幂等但整体不可重跑：每次写入本身幂等（剪引用、`unlink(missing_ok)`、索引重建），但 digest 一旦删除，再跑 delete 会因 `document_footprint` 匹配不到而中止——崩溃恢复走 `fix`（`code_fix_wiki` 补完剩余清链/重建）。`--dry-run` 只打印足迹/受影响页/将删除的页，零写入。
 
 ### 文件布局（运行时产物）
 
@@ -206,7 +208,7 @@ error_book.yaml             # ErrorBook 持久化
 | 改页面格式 | `schema.py` 的 `REQUIRED_SECTIONS` + `render_page`，校验器会跟随 |
 | 接入 Obsidian | 无需改代码——wiki/ 目录直接作为 Obsidian vault 打开 |
 
-## 六、测试地图（65 例）
+## 六、测试地图（66 例）
 
 | 文件 | 覆盖 |
 |---|---|
@@ -220,4 +222,4 @@ error_book.yaml             # ErrorBook 持久化
 | `test_llm.py` | 瞬时错误重试成功、重试上限、4xx 不重试 |
 | `test_robustness.py` | 坏 LLM 输出（数组/缺 path/无 JSON）不崩、批次隔离、更新归一化 |
 | `test_agent.py` | 桥接比较的多跳遍历、未读不许答、耐心/预算两种终止 |
-| `test_delete.py` | 足迹全匹配防前缀碰撞、孤儿页级联删除、存活页剪引用+LLM 重验证、修复守卫、dry-run 零写入、无 key 中止、幂等 |
+| `test_delete.py` | 足迹全匹配防前缀碰撞、孤儿页级联删除、存活页剪引用+LLM 重验证、修复守卫、dry-run 零写入、无 key 中止、重跑洁净报错、幸存页陈旧条目关闭 |
