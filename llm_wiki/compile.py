@@ -462,14 +462,26 @@ class Compiler:
         self._repaired = []
         return self.book.verify_and_close(still)
 
-    def finalize(self, rounds: int = 3) -> None:
+    def finalize(self, rounds: int = 3) -> dict:
         """Finalization: 3 rounds of code-fix <-> LLM-fix (paper §3.3),
-        then a sampling-based cross-page consistency sweep."""
+        then a sampling-based cross-page consistency sweep.
+
+        Returns a summary: ``repaired`` (pages rewritten by the LLM fix,
+        de-duplicated in order) and ``closedEntries`` (error-book entries
+        closed by Verify & Close). Callers that don't need the summary may
+        ignore the return value.
+        """
+        repaired: list[str] = []
         for _ in range(rounds):
             self.code_fix_wiki()
-            self.llm_periodic_fix()
+            repaired += self.llm_periodic_fix()
         contradictions = validators.llm_consistency_check(self.llm, self.store)
         if contradictions:
             new_entries = self.book.discover(contradictions, self.store.today())
             self.book.attribute_and_constrain(self.llm, new_entries)
-        self.verify_and_close()
+        closed = self.verify_and_close()
+        unique: list[str] = []
+        for page in repaired:
+            if page not in unique:
+                unique.append(page)
+        return {"repaired": unique, "closedEntries": closed}
