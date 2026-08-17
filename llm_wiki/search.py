@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import re
 
-from . import schema
 from .store import WikiStore
 
 WEIGHTS = {"name": 8, "alias": 6, "tag": 4, "summary": 2, "content": 1}
@@ -37,14 +36,18 @@ def search(store: WikiStore, query: str, limit: int = 10) -> list[dict]:
         return []
     scored = []
     for rel in store.iter_pages():
-        text = store.read(rel)
-        fm = schema.parse_frontmatter(text)
+        meta = store.page_meta(rel)          # cached (frontmatter, summary)
+        if meta is None:
+            continue
+        fm, summary_raw = meta
         name = rel.split("/")[-1].replace("-", " ").lower()
         aliases = [a.lower() for a in fm.get("aliases", [])]
         tags = [t.lower() for t in fm.get("tags", [])]
-        m = re.search(r"^>\s*(.+)$", text, re.M)
-        summary = (m.group(1).lower() if m else "")
-        content = text.lower()
+        summary = summary_raw.lower()
+
+        # Content fallback needs the body, but only for tokens that miss the
+        # summary. Read (and lowercase) it at most once, and only on demand.
+        content = None
 
         score, matched = 0, set()
         for tok in tokens:
@@ -56,10 +59,13 @@ def search(store: WikiStore, query: str, limit: int = 10) -> list[dict]:
                 score += WEIGHTS["tag"]; matched.add(tok)
             if tok in summary:
                 score += WEIGHTS["summary"]; matched.add(tok)
-            elif tok in content:  # content fallback only if no structured hit
-                score += WEIGHTS["content"]; matched.add(tok)
+            else:  # content fallback only if no summary hit
+                if content is None:
+                    content = store.read(rel).lower()
+                if tok in content:
+                    score += WEIGHTS["content"]; matched.add(tok)
         if score:
-            scored.append((score, len(matched), rel, fm))
+            scored.append((score, len(matched), rel, fm, summary_raw))
     scored.sort(key=lambda x: (-x[0], -x[1], x[2]))
     return [
         {
@@ -67,12 +73,7 @@ def search(store: WikiStore, query: str, limit: int = 10) -> list[dict]:
             "score": score,
             "aliases": fm.get("aliases", []),
             "tags": fm.get("tags", []),
-            "summary": _summary_of(store.read(rel)),
+            "summary": summary_raw,
         }
-        for score, _n, rel, fm in scored[:limit]
+        for score, _n, rel, fm, summary_raw in scored[:limit]
     ]
-
-
-def _summary_of(text: str) -> str:
-    m = re.search(r"^>\s*(.+)$", text, re.M)
-    return m.group(1).strip() if m else ""

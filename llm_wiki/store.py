@@ -27,6 +27,10 @@ class WikiStore:
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / "sources" / "digests").mkdir(parents=True, exist_ok=True)
         (self.root / "sources" / "articles").mkdir(parents=True, exist_ok=True)
+        # rel -> (mtime, frontmatter, summary); populated lazily by page_meta.
+        # Invalidated on write/delete and re-validated by mtime, so any write
+        # path (compile, delete, manual) stays consistent.
+        self._meta_cache: dict[str, tuple[float, dict, str]] = {}
 
     # ------------------------------------------------------------------ paths
     def page_file(self, rel: str) -> Path:
@@ -68,6 +72,30 @@ class WikiStore:
             pages.append(rel)
         return pages
 
+    def page_meta(self, rel: str) -> tuple[dict, str] | None:
+        """(frontmatter, summary) for a page, memoized by mtime.
+
+        Avoids re-reading and re-parsing unchanged pages on every search. The
+        cache is keyed on the file's mtime, so an external edit is picked up;
+        write()/delete() also drop the entry to cover same-second overwrites
+        where mtime may not advance. Returns None if the page is absent.
+        """
+        f = self.page_file(rel)
+        try:
+            mtime = f.stat().st_mtime
+        except OSError:
+            self._meta_cache.pop(rel, None)
+            return None
+        cached = self._meta_cache.get(rel)
+        if cached and cached[0] == mtime:
+            return cached[1], cached[2]
+        text = f.read_text(encoding="utf-8")
+        fm = schema.parse_frontmatter(text)
+        m = re.search(r"^>\s*(.+)$", text, re.M)
+        summary = m.group(1).strip() if m else ""
+        self._meta_cache[rel] = (mtime, fm, summary)
+        return fm, summary
+
     def categories(self) -> list[str]:
         cats = {p.split("/")[0] for p in self.iter_pages()}
         return sorted(cats)
@@ -85,9 +113,11 @@ class WikiStore:
         f = self.page_file(rel)
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(text, encoding="utf-8")
+        self._meta_cache.pop(rel, None)  # force re-parse on next page_meta
 
     def delete(self, rel: str) -> None:
         self.page_file(rel).unlink(missing_ok=True)
+        self._meta_cache.pop(rel, None)
 
     # -------------------------------------------------------------- backlinks
     def add_backlink(self, target: str, source: str, note: str = "") -> bool:

@@ -208,17 +208,17 @@ error_book.yaml             # ErrorBook 持久化
 | 改页面格式 | `schema.py` 的 `REQUIRED_SECTIONS` + `render_page`，校验器会跟随 |
 | 接入 Obsidian | 无需改代码——wiki/ 目录直接作为 Obsidian vault 打开 |
 
-## 六、测试地图（73 例）
+## 六、测试地图（77 例）
 
 | 文件 | 覆盖 |
 |---|---|
 | `test_schema.py` | slugify、链接提取、渲染/解析往返、段落手术式过滤 |
-| `test_store.py` | 读写、双向链接幂等、索引重建、增量索引重建 |
+| `test_store.py` | 读写、双向链接幂等、索引重建、增量索引重建、page_meta 缓存按 mtime 命中/写删失效 |
 | `test_validators.py` | 5 类结构错误各一例 + 干净 Wiki 零误报 |
 | `test_consistency.py` | 跨页矛盾检测、页对去重、抽样上限 |
 | `test_error_book.py` | 错误合并、归因→注入→关闭全循环、持久化重载 |
-| `test_compile.py` | 算法 1 全流程、Unseen Overwrite 入册、约束注入到下一轮 prompt、悬空链接/坏引用落盘前拦截 |
-| `test_search.py` | 英文分词、CJK bigram 分词、中文查询命中别名/摘要、结构化信号优先 |
+| `test_compile.py` | 算法 1 全流程、Unseen Overwrite 入册、约束注入到下一轮 prompt、悬空链接/坏引用落盘前拦截、SelectPages 超 k 记入 skipped |
+| `test_search.py` | 英文分词、CJK bigram 分词、中文查询命中别名/摘要、结构化信号优先、改写后经缓存失效可见 |
 | `test_llm.py` | 瞬时错误重试成功、重试上限、4xx 不重试、chat_tools 解析 tool_calls / 坏参数兜底 / tools 被拒抛 ToolsUnsupported |
 | `test_robustness.py` | 坏 LLM 输出（数组/缺 path/无 JSON）不崩、批次隔离、更新归一化 |
 | `test_agent.py` | 桥接比较的多跳遍历、未读不许答、耐心/预算两种终止（JSON 降级路径）；native 路径同款多跳、一轮多 tool_calls、ToolsUnsupported 运行时降级 |

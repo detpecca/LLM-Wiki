@@ -1,11 +1,17 @@
 """End-to-end Algorithm-1 loop under FakeLLM."""
 
-from llm_wiki import validators
+from llm_wiki import schema, validators
 from llm_wiki.compile import Compiler
 from llm_wiki.error_book import ErrorBook
 from llm_wiki.store import WikiStore
 
 from conftest import FakeLLM, compile_reply, make_page
+
+
+def _page_on_disk(path):
+    return schema.render_page(schema.Page(
+        path=path, title=path.split("/")[-1], summary="s", key_facts=["f"],
+        related_sources=[("sources/digests/d", "n")]), "2026-08-04")
 
 
 def _setup(tmp_path, llm):
@@ -37,6 +43,23 @@ def test_compile_creates_pages_with_backlinks(tmp_path):
     # clean wiki: no structural errors
     assert validators.structural_validate(store) == []
     assert book.open_entries() == []
+
+
+def test_select_pages_over_budget_is_recorded(tmp_path):
+    """LLM returning more than k valid pages: excess is dropped but logged
+    to `skipped`, not silently truncated."""
+    import json
+    llm = FakeLLM()
+    store, _book, compiler = _setup(tmp_path, llm)
+    for i in range(compiler.k + 2):  # k+2 real pages on disk
+        store.write(f"people/P{i}", _page_on_disk(f"people/P{i}"))
+    llm.replies = [json.dumps([f"people/P{i}" for i in range(compiler.k + 2)])]
+
+    selected = compiler.select_pages("passage")
+
+    assert len(selected) == compiler.k               # capped
+    reason = next(r for sid, r in compiler.skipped if sid == "select_pages")
+    assert "people/P" in reason                       # names the dropped pages
 
 
 def test_unseen_overwrite_goes_to_error_book(tmp_path):

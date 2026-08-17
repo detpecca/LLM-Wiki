@@ -209,7 +209,12 @@ class Compiler:
             pages = _extract_json(reply, expect=list)
         except ValueError:
             return []
-        return [p for p in pages if isinstance(p, str) and self.store.exists(p)][: self.k]
+        valid = [p for p in pages if isinstance(p, str) and self.store.exists(p)]
+        if len(valid) > self.k:  # over-budget: record what we drop, don't hide it
+            self.skipped.append(("select_pages",
+                f"LLM selected {len(valid)} pages > k={self.k}; "
+                f"dropped {valid[self.k:]}"))
+        return valid[: self.k]
 
     # --------------------------------------------------- CompileWikiPages (3)
     def compile_pages(self, passage: str, source_id: str, selected: list[str]) -> dict:
