@@ -24,10 +24,18 @@ python -m pytest tests/test_compile.py::test_name -q   # single test
 # it MUST go BEFORE the subcommand, or argparse rejects it.
 python -m llm_wiki --wiki ./wiki ingest notes.txt    # compile a doc into the Wiki
 python -m llm_wiki --wiki ./wiki query "..."         # agent traversal + answer
-python -m llm_wiki --wiki ./wiki validate            # 5 deterministic structural checks
+python -m llm_wiki --wiki ./wiki search "director"   # structured-signal page search
+python -m llm_wiki --wiki ./wiki read entities/X concepts/Y   # batch-read pages
+python -m llm_wiki --wiki ./wiki stats               # page/digest/error-book counts
+python -m llm_wiki --wiki ./wiki validate            # 4 checks here (5th, unseen-overwrite, is compile-time)
 python -m llm_wiki --wiki ./wiki fix --finalize      # code autofix + 3 rounds code<->LLM repair
 python -m llm_wiki --wiki ./wiki delete notes.txt    # remove a doc; --dry-run previews impact
 python -m llm_wiki --wiki ./wiki errorbook           # dump the Error Book
+
+# Every read/repair command (ingest/search/read/stats/validate/fix/errorbook) accepts --json.
+# The DSH harness plugin (dsh-llm-wiki) drives the wiki through these JSON lines.
+# `delete` is deliberately human-only: destructive KB management, NOT exposed to the agent (no --json).
+python -m llm_wiki --wiki ./wiki search "director" --json
 
 # Scripted end-to-end demo (compiles the paper itself, runs multi-hop queries), no API key
 python examples/demo_paper.py

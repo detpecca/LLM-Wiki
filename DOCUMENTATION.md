@@ -90,7 +90,7 @@
 
 - `llm_wiki/llm.py`：OpenAI 兼容客户端，唯一接口是 `chat(messages) -> str`——全系统所有 LLM 调用都走这里，换模型/换端点只改环境变量；
 - `llm_wiki/delete.py`：文档删除（仓库扩展，算法 1 的逆过程）——足迹全匹配防前缀碰撞、扫描 Related Sources 反查引用页、孤儿页整页下线、存活页 LLM 重验证裁剪；`code_fix_wiki` 也吸收了悬空链接剪除作为崩溃恢复手段；
-- `llm_wiki/cli.py`：六个子命令的薄壳，把上面所有模块串起来；
+- `llm_wiki/cli.py`：九个子命令的薄壳，把上面所有模块串起来。读/修复类命令（`ingest`/`search`/`read`/`stats`/`validate`/`fix`/`errorbook`）都支持 `--json`，供 DSH harness 插件（dsh-llm-wiki）以子进程方式驱动；`delete` 是破坏性知识库管理，**刻意只留给人工**，不加 `--json`、不暴露给 agent；
 - `tests/conftest.py`：`FakeLLM`——预置回复队列的 LLM 替身，全部测试靠它摆脱 API 依赖。读测试（尤其 `test_compile.py` 和 `test_agent.py`）是理解系统行为的最快方式；
 - `examples/demo_paper.py`：端到端演示， ScriptedLLM 展示了每个 LLM 步骤"应该输出什么"。
 
