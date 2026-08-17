@@ -14,7 +14,7 @@ python -m venv .venv
 .venv/Scripts/pip install pyyaml pytest      # Windows; POSIX: .venv/bin/pip
 # or, with uv: uv venv && uv pip install pyyaml pytest
 
-# Tests (66 cases, FakeLLM-driven, no API key needed)
+# Tests (73 cases, FakeLLM-driven, no API key needed)
 .venv/Scripts/python -m pytest tests/ -q     # Windows; POSIX: .venv/bin/python
 uv run --no-project python -m pytest tests/ -q          # via uv
 python -m pytest tests/test_compile.py -q              # single module
@@ -47,7 +47,7 @@ No lint/typecheck configured. CI (`.github/workflows/ci.yml`) runs pytest on ubu
 - **Backlinks are system-guaranteed**: the LLM only declares A→B; `store.add_backlink` adds B→A. Don't ask the LLM for reverse links.
 - **Never trust the LLM's `is_new` flag** — derive it from filesystem state.
 - **Error Book constraints are prompt text** injected via `{constraints_block}` in `COMPILE_PAGES_PROMPT`; adding a constraint must never require architecture changes.
-- **Agent protocol is JSON action, not native function calling** (deliberate: works with endpoints lacking `tools` support). `agent.py` enforces `T_max=15`, patience `P=3`, and no `answer` before at least one `wiki_read`.
+- **Agent tool calls: native function calling first, JSON-action fallback.** `agent.py` calls `llm.chat_tools()` (native `tools`) when the client exposes it; falls back to prompt-driven JSON actions (`_parse_action`) either statically (no `chat_tools` method) or at runtime (`ToolsUnsupported` when an endpoint rejects `tools`). Both paths share `_execute()` and enforce `T_max=15`, patience `P=3`, and no `answer` before at least one `wiki_read`. The `chat(messages) -> str` contract is unchanged; `chat_tools` is additive and Agent-only.
 - **Deletion must restore every invariant**: `delete.py` matches the document footprint by full id (`notes` never matches `notes-2-001`), strips dead citations from surviving pages (a page with *no* citations is never treated as sole-source), deletes sole-source pages outright, has the LLM re-verify survivors' facts and `verify_and_close` shut any now-stale open entries on them, prunes dangling links wiki-wide, rebuilds only affected-category indices, and ends with `structural_validate == []` (CLI exits non-zero otherwise). Individual writes are idempotent, but `delete` is NOT re-runnable once digests are gone (it then aborts on no-match); `code_fix_wiki` (`fix`) is the crash-recovery path.
 
 ## Conventions

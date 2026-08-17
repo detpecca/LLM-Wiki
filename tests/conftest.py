@@ -27,6 +27,62 @@ class FakeLLM:
         return "OK"
 
 
+class FakeToolLLM:
+    """Native-tool-calling stand-in: exposes ``chat_tools``.
+
+    ``turns`` is a list of normalized responses popped in order, each shaped
+    like ``{"content": None, "tool_calls": [...]}`` (build with tool_turn()).
+    When ``raise_unsupported`` is True, the first ``chat_tools`` call raises
+    ToolsUnsupported to exercise the runtime fallback. A ``chat`` method is
+    also provided so the same instance can drive the JSON-action fallback.
+    """
+
+    def __init__(self, turns=None, raise_unsupported: bool = False,
+                 fallback_replies=None):
+        self.turns = list(turns or [])
+        self.raise_unsupported = raise_unsupported
+        self.replies = list(fallback_replies or [])
+        self.seen: list = []
+
+    def chat_tools(self, messages, tools, tool_choice="auto", **kwargs) -> dict:
+        from llm_wiki.llm import ToolsUnsupported
+        self.seen.append(messages[-1])
+        if self.raise_unsupported:
+            raise ToolsUnsupported("simulated: endpoint rejects tools")
+        if self.turns:
+            return self.turns.pop(0)
+        return {"content": None, "tool_calls": []}
+
+    def chat(self, messages, **kwargs) -> str:
+        self.seen.append(messages[-1]["content"])
+        if self.replies:
+            return self.replies.pop(0)
+        return "OK"
+
+
+def tool_turn(*calls) -> dict:
+    """Build one native response with the given tool calls.
+
+    Each call is (name, arguments_dict); ids are auto-assigned.
+    """
+    import json
+    return {"content": None, "tool_calls": [
+        {"id": f"call_{i}", "name": name, "arguments": args}
+        for i, (name, args) in enumerate(calls)]}
+
+
+def search_call(query: str) -> tuple:
+    return ("wiki_search", {"query": query})
+
+
+def read_call(*paths) -> tuple:
+    return ("wiki_read", {"paths": list(paths)})
+
+
+def answer_call(answer: str, evidence=None) -> tuple:
+    return ("answer", {"answer": answer, "evidence": evidence or []})
+
+
 def compile_reply(pages: list[dict], digest_id: str = "s-001") -> str:
     """Build a CompileWikiPages JSON reply for given page dicts."""
     import json

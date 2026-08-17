@@ -71,3 +71,40 @@ def test_4xx_not_retried(monkeypatch):
     except urllib.error.HTTPError:
         pass
     assert calls["n"] == 1  # no retry on 4xx
+
+
+# ---------------------------------------------------------- native tool calling
+
+_TOOLS = [{"type": "function", "function": {"name": "t", "parameters": {}}}]
+
+
+def test_chat_tools_parses_tool_calls(monkeypatch):
+    resp = _FakeResp({"choices": [{"message": {"content": None, "tool_calls": [
+        {"id": "call_0", "type": "function",
+         "function": {"name": "wiki_search", "arguments": '{"query": "x"}'}}]}}]})
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: resp)
+    out = _client().chat_tools([{"role": "user", "content": "hi"}], _TOOLS)
+    assert out["content"] is None
+    assert out["tool_calls"] == [
+        {"id": "call_0", "name": "wiki_search", "arguments": {"query": "x"}}]
+
+
+def test_chat_tools_malformed_arguments_default_empty(monkeypatch):
+    resp = _FakeResp({"choices": [{"message": {"content": None, "tool_calls": [
+        {"id": "c", "function": {"name": "wiki_read", "arguments": "not json"}}]}}]})
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: resp)
+    out = _client().chat_tools([{"role": "user", "content": "hi"}], _TOOLS)
+    assert out["tool_calls"][0]["arguments"] == {}
+
+
+def test_chat_tools_raises_toolsunsupported_on_4xx(monkeypatch):
+    def reject(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 400, "bad request", {}, None)
+
+    monkeypatch.setattr(urllib.request, "urlopen", reject)
+    monkeypatch.setattr(llm_mod.time, "sleep", lambda s: None)
+    try:
+        _client().chat_tools([{"role": "user", "content": "hi"}], _TOOLS)
+        raise AssertionError("should have raised")
+    except llm_mod.ToolsUnsupported:
+        pass
