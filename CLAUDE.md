@@ -14,7 +14,7 @@ python -m venv .venv
 .venv/Scripts/pip install pyyaml pytest      # Windows; POSIX: .venv/bin/pip
 # or, with uv: uv venv && uv pip install pyyaml pytest
 
-# Tests (73 cases, FakeLLM-driven, no API key needed)
+# Tests (77 cases, FakeLLM-driven, no API key needed)
 .venv/Scripts/python -m pytest tests/ -q     # Windows; POSIX: .venv/bin/python
 uv run --no-project python -m pytest tests/ -q          # via uv
 python -m pytest tests/test_compile.py -q              # single module
@@ -44,6 +44,7 @@ No lint/typecheck configured. CI (`.github/workflows/ci.yml`) runs pytest on ubu
 - **All LLM calls go through `llm.py`'s `chat(messages) -> str` interface.** Any object with a `chat()` method can substitute — that's how `tests/conftest.py`'s `FakeLLM` works. Never put urllib/json LLM logic anywhere else.
 - **Semantic judgment → LLM; mechanical validity → code.** Link existence, format, and set-inclusion checks are deterministic code; fact-checking, attribution, and content repair are LLM. Preserve this split.
 - **`_index.md` and `index.md` are derived products** — always rebuild via `rebuild_directory_index`/`rebuild_global_index` (or the incremental `rebuild_indices_for`), never edit by hand.
+- **`store.page_meta()` memoizes (frontmatter, summary) by mtime** to keep `search` off a full read+parse of every page. `write`/`delete` invalidate the entry (covers same-second overwrites where mtime may not advance). Any new write path MUST go through `store.write`/`store.delete`, never raw file writes, or the cache goes stale.
 - **Backlinks are system-guaranteed**: the LLM only declares A→B; `store.add_backlink` adds B→A. Don't ask the LLM for reverse links.
 - **Never trust the LLM's `is_new` flag** — derive it from filesystem state.
 - **Error Book constraints are prompt text** injected via `{constraints_block}` in `COMPILE_PAGES_PROMPT`; adding a constraint must never require architecture changes.

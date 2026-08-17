@@ -49,3 +49,18 @@ def test_search_structured_beats_content(tmp_path):
     store = _store_with_pages(tmp_path)
     results = search(store, "LLM-Wiki")
     assert results[0]["path"] == "systems/LLM-Wiki"
+
+
+def test_search_reflects_rewrite_via_cache_invalidation(tmp_path):
+    """Rewriting a page must be visible to search (page_meta cache is
+    invalidated on write), even for a same-second overwrite."""
+    store = _store_with_pages(tmp_path)
+    assert search(store, "自我纠错")[0]["path"] == "systems/LLM-Wiki"
+    # rewrite the summary to no longer match the query
+    store.write("systems/LLM-Wiki", schema.render_page(schema.Page(
+        path="systems/LLM-Wiki", title="LLM-Wiki", aliases=["LLM Wiki"],
+        tags=["RAG"], summary="完全不同的主题",
+        key_facts=["f"], related_sources=[("sources/digests/d", "n")],
+    ), "2026-08-04"))
+    hits = [r["path"] for r in search(store, "自我纠错")]
+    assert "systems/LLM-Wiki" not in hits  # stale cache would still match

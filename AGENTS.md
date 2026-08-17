@@ -7,7 +7,7 @@ Python implementation of the paper "Retrieval as Reasoning: Self-Evolving Agent-
 ## Commands
 
 ```bash
-# Tests (73 cases, FakeLLM-driven, no API key needed)
+# Tests (77 cases, FakeLLM-driven, no API key needed)
 .venv/Scripts/python -m pytest tests/ -q        # Windows; on POSIX: .venv/bin/python
 python -m pytest tests/test_compile.py -q       # single module
 
@@ -34,6 +34,7 @@ No lint/typecheck configured. CI (`.github/workflows/ci.yml`) runs pytest on ubu
 - **All LLM calls go through `llm.py`'s `chat(messages) -> str` interface.** Any object with a `chat()` method can substitute — that's how `tests/conftest.py`'s `FakeLLM` works. Never import urllib/json LLM logic elsewhere.
 - **Semantic judgment → LLM; mechanical validity → code.** Link existence, format, set-inclusion checks are deterministic code; fact-checking, attribution, content repair are LLM. Keep this split.
 - **`_index.md` and `index.md` are derived products** — always rebuild via `rebuild_directory_index`/`rebuild_global_index`, never edit by hand.
+- **`store.page_meta()` memoizes (frontmatter, summary) by mtime** so `search` skips a full read+parse of every page. `write`/`delete` invalidate it (covers same-second overwrites). New write paths must use `store.write`/`store.delete`, not raw file writes, or the cache goes stale.
 - **Backlinks are system-guaranteed**: LLM only declares A→B; `store.add_backlink` adds B→A. Don't ask the LLM for reverse links.
 - **Never trust the LLM's `is_new` flag** — derive it from filesystem state (see commit 6ecf76c).
 - **Error Book constraints are prompt text** injected via `{constraints_block}` in `COMPILE_PAGES_PROMPT` — adding constraints must not require architecture changes.

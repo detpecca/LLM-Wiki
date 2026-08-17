@@ -51,3 +51,32 @@ def test_rebuild_indices_for_only_touches_affected(tmp_path):
     assert "[[people/A]]" in store.read("people/_index")   # people 已重建
     assert store.read("systems/_index") == "# corrupted\n"  # systems 未被触碰
     assert "people/" in store.read("index")                # 全局索引已更新
+
+
+def test_page_meta_cached_and_invalidated_on_write(tmp_path):
+    store = WikiStore(tmp_path / "wiki")
+    page = schema.render_page(schema.Page(
+        path="people/A", title="A", summary="first summary",
+        aliases=["Alpha"], key_facts=["f"]), "2026-08-04")
+    store.write("people/A", page)
+    fm, summary = store.page_meta("people/A")
+    assert summary == "first summary"
+    assert fm.get("aliases") == ["Alpha"]
+    # second call hits the cache (same mtime) but must return the same data
+    assert store.page_meta("people/A") == (fm, summary)
+    # a write must invalidate: new summary is visible even within the same second
+    page2 = schema.render_page(schema.Page(
+        path="people/A", title="A", summary="second summary",
+        aliases=["Beta"], key_facts=["f"]), "2026-08-04")
+    store.write("people/A", page2)
+    fm2, summary2 = store.page_meta("people/A")
+    assert summary2 == "second summary"
+    assert fm2.get("aliases") == ["Beta"]
+
+
+def test_page_meta_none_after_delete(tmp_path):
+    store = WikiStore(tmp_path / "wiki")
+    store.write("people/A", _page("people/A"))
+    assert store.page_meta("people/A") is not None
+    store.delete("people/A")
+    assert store.page_meta("people/A") is None
