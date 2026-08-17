@@ -74,12 +74,12 @@ python examples/demo_paper.py
 ## 测试
 
 ```bash
-.venv/Scripts/python -m pytest tests/ -q   # 66 个用例，FakeLLM 驱动，无需 API key
+.venv/Scripts/python -m pytest tests/ -q   # 73 个用例，FakeLLM 驱动，无需 API key
 ```
 
 ## 与论文的差异（刻意取舍）
 
 - **wiki_search 无向量嵌入**：以页名/别名/标签/摘要的结构化匹配为主、正文匹配回退（论文本就如此排序优先级）；未接入嵌入模型。
 - **未复现实验**：不含基准评测代码（HotpotQA/MuSiQue/2Wiki/AuthTrace）。
-- **Agent 工具协议为 JSON action** 而非原生 function calling：兼容任意 OpenAI 兼容端点（含不支持 tools 参数的本地模型）。
+- **Agent 工具协议优先原生 function calling**，端点不支持时自动降级为 JSON action：既跟上主流工具调用，又兼容任意 OpenAI 兼容端点（含不支持 tools 参数的本地模型）。降级双触发：LLM 客户端无 `chat_tools` 方法 / 运行时端点拒绝 `tools`（`ToolsUnsupported`）。
 - **文档删除（仓库扩展）**：论文未定义删除语义；`llm_wiki/delete.py` 实现算法 1 的逆过程——反查引用 → 删孤儿页 → LLM 重验证存活页事实 → 级联清链 → 重建索引，以结构校验零错误收尾。

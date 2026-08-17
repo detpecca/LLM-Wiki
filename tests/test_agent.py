@@ -3,7 +3,9 @@
 from llm_wiki import agent, schema
 from llm_wiki.store import WikiStore
 
-from conftest import FakeLLM, agent_script, answer_action, read_action, search_action
+from conftest import (FakeLLM, FakeToolLLM, agent_script, answer_action,
+                      answer_call, read_action, read_call, search_action,
+                      search_call, tool_turn)
 
 
 def _film_wiki(tmp_path):
@@ -71,3 +73,59 @@ def test_budget_terminates(tmp_path):
     result = agent.run_agent(store, llm, "q", t_max=5)
     assert "terminated" in result["answer"]
     assert len([t for t in result["trace"] if t["tool"] == "wiki_read"]) == 5
+
+
+# ------------------------------------------------------ native tool-calling path
+
+def test_native_bridge_comparison(tmp_path):
+    store = _film_wiki(tmp_path)
+    llm = FakeToolLLM([
+        tool_turn(search_call("The Gamecock Monster A Go-Go")),
+        tool_turn(read_call("media/The-Gamecock", "media/Monster-A-Go-Go")),
+        tool_turn(read_call("people/Pasquale-Festa-Campanile",
+                            "people/Herschell-Gordon-Lewis")),
+        tool_turn(answer_call("Monster A Go-Go (Lewis 1926 older)",
+                              ["people/Herschell-Gordon-Lewis"])),
+    ])
+    result = agent.run_agent(store, llm, "Which film has the older director?")
+    assert "Monster A Go-Go" in result["answer"]
+    tools = [t["tool"] for t in result["trace"]]
+    assert tools == ["wiki_search", "wiki_read", "wiki_read", "answer"]
+
+
+def test_native_answer_requires_wiki_read(tmp_path):
+    store = _film_wiki(tmp_path)
+    llm = FakeToolLLM([
+        tool_turn(answer_call("premature")),          # rejected: no read yet
+        tool_turn(read_call("media/The-Gamecock")),
+        tool_turn(answer_call("grounded", ["media/The-Gamecock"])),
+    ])
+    result = agent.run_agent(store, llm, "q")
+    assert result["answer"] == "grounded"
+
+
+def test_native_multiple_tool_calls_in_one_turn(tmp_path):
+    store = _film_wiki(tmp_path)
+    # model batches two reads in a single assistant turn
+    llm = FakeToolLLM([
+        tool_turn(read_call("media/The-Gamecock"),
+                  read_call("media/Monster-A-Go-Go")),
+        tool_turn(answer_call("done", ["media/The-Gamecock"])),
+    ])
+    result = agent.run_agent(store, llm, "q")
+    assert result["answer"] == "done"
+    reads = [t for t in result["trace"] if t["tool"] == "wiki_read"]
+    assert len(reads) == 2  # both calls executed
+
+
+def test_native_falls_back_to_json_on_unsupported(tmp_path):
+    store = _film_wiki(tmp_path)
+    # chat_tools raises ToolsUnsupported; the JSON-action replies then drive it
+    llm = FakeToolLLM(raise_unsupported=True, fallback_replies=agent_script(
+        read_action("media/The-Gamecock"),
+        answer_action("fallback answer", ["media/The-Gamecock"]),
+    ))
+    result = agent.run_agent(store, llm, "q")
+    assert result["answer"] == "fallback answer"
+    tools = [t["tool"] for t in result["trace"]]
+    assert tools == ["wiki_read", "answer"]

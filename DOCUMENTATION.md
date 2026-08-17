@@ -82,9 +82,9 @@
 
 `run_agent()`（`:67`）是 ReAct 循环。对照论文图 2 读：
 
-- 协议：LLM 每轮输出一个 JSON action（`wiki_search`/`wiki_read`/`answer`），`_parse_action()`（`:56`）解析；
-- 终止条件在循环里：步数上限 `t_max=15`、连续空搜索 `patience=3`、以及"未 wiki_read 不许作答"的硬性拒绝（`:105`）；
-- 系统提示词 `SYSTEM_PROMPT`（`:23`）里写了附录 H 的三种策略（直接检索/链接跟随/浏览聚合）——策略不是代码分支，是**教给 LLM 的**。
+- 协议（双路径）：优先原生 function calling——`chat_tools()` 带 `tools` 参数请求，直接读响应里的 `tool_calls`；当 LLM 客户端无 `chat_tools` 方法（如纯 `FakeLLM`）或端点拒绝 `tools`（抛 `ToolsUnsupported`）时，降级为「每轮输出一个 JSON action」由 `_parse_action()` 解析。两条路径共用 `_execute()` 执行工具，终止/作答规则一致；
+- 终止条件在循环里：步数上限 `t_max=15`、连续空搜索 `patience=3`、以及"未 wiki_read 不许作答"的硬性拒绝；
+- 系统提示词写了附录 H 的三种策略（直接检索/链接跟随/浏览聚合）——策略不是代码分支，是**教给 LLM 的**。native 路径用 `SYSTEM_PROMPT_NATIVE`（工具走结构化 schema），fallback 路径用 `SYSTEM_PROMPT`（手写 JSON 协议）。
 
 ### 第 8 站：外围（可选读）
 
@@ -196,7 +196,7 @@ error_book.yaml             # ErrorBook 持久化
 
 - `wiki_search` 无向量嵌入：论文实现细节未公开，我们按"结构化信号优先"原则用纯文本打分（`search.py` 的权重是自行设定的）；中文查询走 CJK bigram 分词。
 - LLM 周期修复触发器：论文说 "every N articles"，默认 N=10（与 §4.4 的 re-validation period 对齐）。
-- Agent 工具协议采用 JSON action 而非原生 function calling：为了兼容任意 OpenAI 兼容端点（含不支持 tools 参数的本地模型）。
+- Agent 工具协议优先原生 function calling，端点不支持时自动降级到 JSON action：既跟上主流工具调用，又兼容不支持 `tools` 参数的本地端点（双触发降级：无 `chat_tools` 方法 / 运行时 `ToolsUnsupported`）。
 
 ## 五、扩展点
 
@@ -208,7 +208,7 @@ error_book.yaml             # ErrorBook 持久化
 | 改页面格式 | `schema.py` 的 `REQUIRED_SECTIONS` + `render_page`，校验器会跟随 |
 | 接入 Obsidian | 无需改代码——wiki/ 目录直接作为 Obsidian vault 打开 |
 
-## 六、测试地图（66 例）
+## 六、测试地图（73 例）
 
 | 文件 | 覆盖 |
 |---|---|
@@ -219,7 +219,7 @@ error_book.yaml             # ErrorBook 持久化
 | `test_error_book.py` | 错误合并、归因→注入→关闭全循环、持久化重载 |
 | `test_compile.py` | 算法 1 全流程、Unseen Overwrite 入册、约束注入到下一轮 prompt、悬空链接/坏引用落盘前拦截 |
 | `test_search.py` | 英文分词、CJK bigram 分词、中文查询命中别名/摘要、结构化信号优先 |
-| `test_llm.py` | 瞬时错误重试成功、重试上限、4xx 不重试 |
+| `test_llm.py` | 瞬时错误重试成功、重试上限、4xx 不重试、chat_tools 解析 tool_calls / 坏参数兜底 / tools 被拒抛 ToolsUnsupported |
 | `test_robustness.py` | 坏 LLM 输出（数组/缺 path/无 JSON）不崩、批次隔离、更新归一化 |
-| `test_agent.py` | 桥接比较的多跳遍历、未读不许答、耐心/预算两种终止 |
+| `test_agent.py` | 桥接比较的多跳遍历、未读不许答、耐心/预算两种终止（JSON 降级路径）；native 路径同款多跳、一轮多 tool_calls、ToolsUnsupported 运行时降级 |
 | `test_delete.py` | 足迹全匹配防前缀碰撞、孤儿页级联删除、存活页剪引用+LLM 重验证、修复守卫、dry-run 零写入、无 key 中止、重跑洁净报错、幸存页陈旧条目关闭 |
