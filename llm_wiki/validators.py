@@ -6,6 +6,7 @@ require LLM verification (see llm_content_validate).
 
 from __future__ import annotations
 
+import random
 import re
 from dataclasses import dataclass
 
@@ -215,29 +216,47 @@ CONTRADICTION: <attribute>: A says X, B says Y
 If the pages are consistent, reply exactly: OK"""
 
 
-def llm_consistency_check(llm, store: WikiStore, max_pairs: int = 20) -> list[WikiError]:
-    """Cross-page contradiction check (paper Table 6, row 7).
-
-    Sampling-based: pages are paired with their outgoing wikilink targets,
-    pairs are deduplicated and evenly sampled up to ``max_pairs``.
-    """
+def linked_pairs(store: WikiStore) -> list[tuple[str, str]]:
+    """All deduplicated page<->page wikilink pairs, sorted."""
     pairs: set[tuple[str, str]] = set()
     for rel in store.iter_pages():
         for link in schema.extract_links(store.read(rel)):
             if link.startswith("sources/") or not store.exists(link):
                 continue
             pairs.add(tuple(sorted((rel, link))))
-    pairs = sorted(pairs)
-    if len(pairs) > max_pairs:  # even-stride deterministic sampling
-        step = len(pairs) / max_pairs
-        pairs = [pairs[int(i * step)] for i in range(max_pairs)]
+    return sorted(pairs)
 
+
+def _check_pair(llm, store: WikiStore, a: str, b: str) -> list[WikiError]:
+    """LLM contradiction check for one page pair."""
+    reply = llm.chat([{"role": "user", "content": CONSISTENCY_PROMPT.format(
+        page_a=a, text_a=store.read(a), page_b=b, text_b=store.read(b))}])
+    errors: list[WikiError] = []
+    for line in reply.splitlines():
+        if line.strip().upper().startswith("CONTRADICTION:"):
+            detail = line.split(":", 1)[1].strip()
+            errors.append(WikiError(CROSS_PAGE_CONTRADICTION, a, f"{a} vs {b}: {detail}"))
+    return errors
+
+
+def llm_consistency_check(llm, store: WikiStore, max_pairs: int = 20,
+                          pairs: list[tuple[str, str]] | None = None) -> list[WikiError]:
+    """Cross-page contradiction check (paper Table 6, row 7).
+
+    Two modes:
+    - sweep (``pairs=None``): all linked page pairs, randomly sampled down to
+      ``max_pairs`` when there are more. Sampling is deliberately NOT
+      deterministic — a fixed stride would re-check the same subset forever
+      on a static wiki, leaving the rest permanently unexamined.
+    - targeted (``pairs`` given): exactly those pairs, no sampling. Used by
+      Verify & Close so a known open contradiction entry is re-checked
+      directly instead of relying on the luck of the sweep sample.
+    """
+    if pairs is None:
+        pairs = linked_pairs(store)
+        if len(pairs) > max_pairs:
+            pairs = random.sample(pairs, max_pairs)
     errors: list[WikiError] = []
     for a, b in pairs:
-        reply = llm.chat([{"role": "user", "content": CONSISTENCY_PROMPT.format(
-            page_a=a, text_a=store.read(a), page_b=b, text_b=store.read(b))}])
-        for line in reply.splitlines():
-            if line.strip().upper().startswith("CONTRADICTION:"):
-                detail = line.split(":", 1)[1].strip()
-                errors.append(WikiError(CROSS_PAGE_CONTRADICTION, a, f"{a} vs {b}: {detail}"))
+        errors += _check_pair(llm, store, a, b)
     return errors

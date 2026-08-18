@@ -458,7 +458,16 @@ class Compiler:
         if content_pages:
             still += validators.llm_content_validate(self.llm, self.store, content_pages)
         if validators.CROSS_PAGE_CONTRADICTION in types:
-            still += validators.llm_consistency_check(self.llm, self.store)
+            # Targeted re-check, NOT a fresh sweep sample: an open contradiction
+            # must be re-examined on its own pair(s), or Verify & Close would
+            # "close" it unseen whenever the sweep misses it (guaranteed for
+            # most pairs once the wiki has more pairs than the sample cap).
+            cpc_pages = {e["page"] for e in open_entries
+                         if e["type"] == validators.CROSS_PAGE_CONTRADICTION and e["page"]}
+            incident = [p for p in validators.linked_pairs(self.store)
+                        if p[0] in cpc_pages | repaired or p[1] in cpc_pages | repaired]
+            if incident:
+                still += validators.llm_consistency_check(self.llm, self.store, pairs=incident)
         self._repaired = []
         return self.book.verify_and_close(still)
 

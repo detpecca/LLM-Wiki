@@ -81,7 +81,7 @@ python examples/demo_paper.py
 ## 测试
 
 ```bash
-.venv/Scripts/python -m pytest tests/ -q   # 77 个用例，FakeLLM 驱动，无需 API key
+.venv/Scripts/python -m pytest tests/ -q   # 90 个用例，FakeLLM 驱动，无需 API key
 ```
 
 ## 与论文的差异（刻意取舍）

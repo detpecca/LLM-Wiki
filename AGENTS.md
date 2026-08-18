@@ -7,7 +7,7 @@ Python implementation of the paper "Retrieval as Reasoning: Self-Evolving Agent-
 ## Commands
 
 ```bash
-# Tests (77 cases, FakeLLM-driven, no API key needed)
+# Tests (90 cases, FakeLLM-driven, no API key needed)
 .venv/Scripts/python -m pytest tests/ -q        # Windows; on POSIX: .venv/bin/python
 python -m pytest tests/test_compile.py -q       # single module
 

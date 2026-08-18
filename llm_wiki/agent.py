@@ -149,6 +149,8 @@ def _execute(store: WikiStore, action: dict, state: dict, trace: list[dict],
     tool = action.get("tool")
     if tool == "wiki_search":
         query = action.get("query", "")
+        if not isinstance(query, str):  # LLM may send a number/bool
+            query = str(query)
         results = search.search(store, query)
         state["empty"] = state["empty"] + 1 if not results else 0
         trace.append({"tool": tool, "query": query, "hits": len(results)})
@@ -160,7 +162,12 @@ def _execute(store: WikiStore, action: dict, state: dict, trace: list[dict],
         obs = json.dumps(results, ensure_ascii=False) if results else "(no results)"
         return {"kind": "observation", "text": obs}
     if tool == "wiki_read":
-        paths = [p.removesuffix(".md") for p in action.get("paths", [])]
+        paths = action.get("paths", [])
+        if isinstance(paths, str):  # single path sent as a bare string
+            paths = [paths]
+        elif not isinstance(paths, list):
+            paths = []
+        paths = [str(p).removesuffix(".md") for p in paths]
         contents = store.read_many(paths)
         state["reads"] += 1
         state["empty"] = 0

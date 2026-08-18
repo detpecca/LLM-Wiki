@@ -129,3 +129,28 @@ def test_native_falls_back_to_json_on_unsupported(tmp_path):
     assert result["answer"] == "fallback answer"
     tools = [t["tool"] for t in result["trace"]]
     assert tools == ["wiki_read", "answer"]
+
+
+def test_read_accepts_bare_string_path(tmp_path):
+    """A single path sent as a string (not a list) reads that one page."""
+    store = _film_wiki(tmp_path)
+    llm = FakeLLM(agent_script(
+        {"tool": "wiki_read", "paths": "media/The-Gamecock"},
+        answer_action("ok", ["media/The-Gamecock"]),
+    ))
+    result = agent.run_agent(store, llm, "q")
+    assert result["answer"] == "ok"
+    assert result["trace"][0] == {"tool": "wiki_read", "paths": ["media/The-Gamecock"]}
+
+
+def test_search_coerces_non_string_query(tmp_path):
+    """A numeric query is coerced instead of crashing the agent loop."""
+    store = _film_wiki(tmp_path)
+    llm = FakeLLM(agent_script(
+        {"tool": "wiki_search", "query": 123},
+        read_action("media/The-Gamecock"),
+        answer_action("ok", ["media/The-Gamecock"]),
+    ))
+    result = agent.run_agent(store, llm, "q")
+    assert result["answer"] == "ok"
+    assert result["trace"][0]["tool"] == "wiki_search"

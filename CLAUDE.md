@@ -14,7 +14,7 @@ python -m venv .venv
 .venv/Scripts/pip install pyyaml pytest      # Windows; POSIX: .venv/bin/pip
 # or, with uv: uv venv && uv pip install pyyaml pytest
 
-# Tests (77 cases, FakeLLM-driven, no API key needed)
+# Tests (90 cases, FakeLLM-driven, no API key needed)
 .venv/Scripts/python -m pytest tests/ -q     # Windows; POSIX: .venv/bin/python
 uv run --no-project python -m pytest tests/ -q          # via uv
 python -m pytest tests/test_compile.py -q              # single module
